@@ -355,11 +355,10 @@ module FakeFtp
     end
 
     def data_client_block(&block)
-      puts 'execute'
       data_client = active? ? @active_connection : @data_server.accept
       begin
         yield(data_client)
-      rescue 
+      rescue
         data_client.close
       end
     end
