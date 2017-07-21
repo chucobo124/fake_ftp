@@ -154,16 +154,16 @@ module FakeFtp
       respond_with('425 Ain\'t no data port!') && return if active? && @active_connection.nil?
 
       respond_with('150 Listing status ok, about to open data connection')
-      data_client = active? ? @active_connection : @data_server.accept
+      data_client_block do |data_client|
+        wildcards = build_wildcards(args)
+        files = matching_files(@files, wildcards)
 
-      wildcards = build_wildcards(args)
-      files = matching_files(@files, wildcards)
-
-      files = files.map do |f|
-        "-rw-r--r--\t1\towner\tgroup\t#{f.bytes}\t#{f.created.strftime('%b %d %H:%M')}\t#{f.name}\n"
+        files = files.map do |f|
+          "-rw-r--r--\t1\towner\tgroup\t#{f.bytes}\t#{f.created.strftime('%b %d %H:%M')}\t#{f.name}\n"
+        end
+        data_client.write(files.join)
+        data_client.close
       end
-      data_client.write(files.join)
-      data_client.close
       @active_connection = nil
 
       '226 List information transferred'
@@ -181,17 +181,14 @@ module FakeFtp
       respond_with('425 Ain\'t no data port!') && return if active? && @active_connection.nil?
 
       respond_with('150 Listing status ok, about to open data connection')
-      data_client = active? ? @active_connection : @data_server.accept
-
-      wildcards = build_wildcards(args)
-      files = matching_files(@files, wildcards)
-
-      files = files.map do |file|
-        "#{file.name}\n"
+      data_client_block do |data_client|
+        wildcards = build_wildcards(args)
+        files = matching_files(@files, wildcards).map do |file|
+          "#{file.name}\n"
+        end
+        data_client.write(files.join)
+        data_client.close
       end
-
-      data_client.write(files.join)
-      data_client.close
       @active_connection = nil
 
       '226 List information transferred'
@@ -243,11 +240,10 @@ module FakeFtp
       respond_with('425 Ain\'t no data port!') && return if active? && @active_connection.nil?
 
       respond_with('150 File status ok, about to open data connection')
-      data_client = active? ? @active_connection : @data_server.accept
-
-      data_client.write(file.data)
-
-      data_client.close
+      data_client_block do |data_client|
+        data_client.write(file.data)
+        data_client.close
+      end
       @active_connection = nil
       '226 File transferred'
     end
@@ -278,13 +274,12 @@ module FakeFtp
       respond_with('425 Ain\'t no data port!') && return if active? && @active_connection.nil?
 
       respond_with('125 Do it!')
-      data_client = active? ? @active_connection : @data_server.accept
-
-      data = data_client.read(nil).chomp
-      file = FakeFtp::File.new(::File.basename(filename.to_s), data, @mode)
-      @files << file
-
-      data_client.close
+      data_client_block do |data_client|
+        data = data_client.read(nil).chomp
+        file = FakeFtp::File.new(::File.basename(filename.to_s), data, @mode)
+        @files << file
+        data_client.close
+      end
       @active_connection = nil
       '226 Did it!'
     end
@@ -356,6 +351,16 @@ module FakeFtp
         end
       else
         files
+      end
+    end
+
+    def data_client_block(&block)
+      puts 'execute'
+      data_client = active? ? @active_connection : @data_server.accept
+      begin
+        yield(data_client)
+      rescue 
+        data_client.close
       end
     end
   end
